@@ -146,9 +146,13 @@ Templates live in `resources/views/` and use plain PHP.
     <h1>Hello, <?= $this->e($name) ?></h1>
 <?php $this->endSection(); ?>
 
-<?php $this->append('scripts'); ?>
+<?php $this->push('scripts'); ?>
 <script src="/js/page.js"></script>
-<?php $this->endStack(); ?>
+<?php $this->endPush(); ?>
+
+<?php $this->prepend('scripts'); ?>
+<script src="/js/vendor.js"></script>
+<?php $this->endPrepend(); ?>
 ```
 
 ```php
@@ -160,16 +164,16 @@ return $app->view('home', ['name' => 'World']);
 
 | Method | Description |
 |--------|-------------|
-| `$this->extend('name')` | Set the parent layout template |
-| `$this->yield('name', 'default')` | Output a section (use in layouts) |
-| `$this->section('name', 'value')` | Define a section inline (single-line value) |
+| `$this->extend('name')` | Declare the parent layout template |
+| `$this->yield('name', 'default')` | Output a section in a layout |
+| `$this->section('name', 'value')` | Define a section inline (no buffering) |
 | `$this->startSection('name')` | Begin buffering a section |
 | `$this->endSection()` | End the current section buffer |
-| `$this->start('name')` / `$this->end()` | Aliases for startSection / endSection |
-| `$this->stack('name')` | Output a stack (use in layouts) |
-| `$this->append('name')` | Begin buffering content to append to a stack |
+| `$this->stack('name')` | Output a stack in a layout |
+| `$this->push('name')` | Begin buffering content to append to a stack |
+| `$this->endPush()` | End the current push buffer |
 | `$this->prepend('name')` | Begin buffering content to prepend to a stack |
-| `$this->endStack()` | End the current stack buffer |
+| `$this->endPrepend()` | End the current prepend buffer |
 | `$this->e('string')` | HTML-escape a value |
 | `$this->share('key', $value)` | Share a variable with all templates |
 
