@@ -77,10 +77,10 @@ $app->post('/api/items', $handler)->middleware('token', 'throttle:60,1');
 ### Route Groups
 
 ```php
-$app->group('/admin', ['middleware' => ['csrf', 'auth']], function () use ($app): void {
+$app->group('/admin', function () use ($app): void {
     $app->get('/', $handler);
     $app->get('/users', $handler);
-});
+}, ['csrf', 'auth']);
 ```
 
 ---
@@ -88,18 +88,18 @@ $app->group('/admin', ['middleware' => ['csrf', 'auth']], function () use ($app)
 ## Request
 
 ```php
-$request->all();                        // all input (body + query)
-$request->input('name');               // single input value
-$request->input('role', 'user');       // with default
-$request->only('name', 'email');       // whitelist
-$request->query('page', 1);           // query string value
-$request->getRouteParam('id');         // route parameter
-$request->header('Authorization');     // request header
-$request->isJson();                    // Content-Type: application/json
-$request->isAjax();                    // X-Requested-With: XMLHttpRequest
-$request->method();                    // GET, POST, etc.
-$request->uri();                       // /path?query
-$request->ip();                        // client IP
+$request->all();                          // all input (body + query)
+$request->input('name');                  // single input value
+$request->input('role', 'user');          // with default
+$request->only('name', 'email');          // whitelist
+$request->query('page', 1);              // query string value
+$request->getRouteParam('id');            // route parameter
+$request->getHeader('Authorization');     // request header
+$request->isJson();                       // Content-Type: application/json
+$request->isAjax();                       // X-Requested-With: XMLHttpRequest
+$request->getMethod();                    // GET, POST, etc.
+$request->getUri();                       // /path?query
+$request->getIp();                        // client IP
 ```
 
 ---
@@ -107,7 +107,7 @@ $request->ip();                        // client IP
 ## Response
 
 ```php
-return $response->view('template', $data);     // render a view
+return $app->view('template', $data);          // render a view (on $app, not $response)
 return $response->json($data);                 // JSON response (200)
 return $response->json($data, 201);            // JSON with status
 return $response->redirect('/path');           // 302 redirect
@@ -167,7 +167,7 @@ try {
 }
 ```
 
-Available rules: `required`, `string`, `integer`, `numeric`, `boolean`, `email`, `url`, `min`, `max`, `in`, `regex`, `confirmed`.
+Available rules: `required`, `nullable`, `string`, `integer`, `numeric`, `boolean`, `array`, `email`, `url`, `min`, `max`, `between`, `size`, `in`, `not_in`, `same`, `different`, `confirmed`, `regex`.
 
 ---
 
@@ -326,7 +326,7 @@ class CustomMiddleware implements MiddlewareInterface
 ## Cache
 
 ```php
-$app['cache']->put('key', $value, $ttlSeconds);
+$app['cache']->set('key', $value, $ttlSeconds);
 $app['cache']->get('key');
 $app['cache']->get('key', $default);
 $app['cache']->has('key');
@@ -410,7 +410,7 @@ $app['scheduler']->call(function () use ($app): void {
 })->daily();
 
 $app['scheduler']->call(fn () => /* ... */)->hourly();
-$app['scheduler']->call(fn () => /* ... */)->everyMinutes(15);
+$app['scheduler']->call(fn () => /* ... */)->everyFifteenMinutes();
 $app['scheduler']->call(fn () => /* ... */)->cron('0 9 * * 1'); // every Monday at 9am
 ```
 
@@ -424,12 +424,22 @@ $app['scheduler']->call(fn () => /* ... */)->cron('0 9 * * 1'); // every Monday 
 ## Mail
 
 ```php
-$app['mailer']
+use Zen\Mail\Message;
+
+$app['mailer']->send(function (Message $message): void {
+    $message->to('alice@example.com', 'Alice')
+            ->subject('Welcome!')
+            ->text('Thanks for signing up.')
+            ->html('<p>Thanks for signing up.</p>');
+});
+
+// Or pass a Message instance directly
+$message = (new Message())
     ->to('alice@example.com', 'Alice')
     ->subject('Welcome!')
-    ->text('Thanks for signing up.')
-    ->html('<p>Thanks for signing up.</p>')
-    ->send();
+    ->text('Thanks for signing up.');
+
+$app['mailer']->send($message);
 ```
 
 Configure the driver in `config.php` (`log`, `smtp`, or `sendmail`).
@@ -558,7 +568,7 @@ use Zen\Support\Str;
 
 Str::slug('Hello World');           // hello-world
 Str::camel('hello_world');          // helloWorld
-Str::pascal('hello_world');         // HelloWorld
+Str::studly('hello_world');         // HelloWorld
 Str::snake('helloWorld');           // hello_world
 Str::contains('foobar', 'oba');     // true
 Str::startsWith('foobar', 'foo');   // true
@@ -626,16 +636,26 @@ use Zen\Console\Command;
 
 class GreetCommand extends Command
 {
-    protected string $signature = 'greet {name}';
-    protected string $description = 'Greet someone';
-
-    public function handle(): int
+    public function name(): string
     {
-        $this->line('Hello, ' . $this->argument('name') . '!');
+        return 'greet';
+    }
+
+    public function description(): string
+    {
+        return 'Greet someone by name.';
+    }
+
+    public function handle(array $args, array $options): int
+    {
+        $name = $args[0] ?? 'World';
+        $this->line('Hello, ' . $name . '!');
         return 0;
     }
 }
 ```
+
+Output helpers available inside `handle()`: `$this->line()`, `$this->info()` (green), `$this->warn()` (yellow), `$this->error()` (red).
 
 Register in `bootstrap/app.php`:
 
