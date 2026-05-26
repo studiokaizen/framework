@@ -493,16 +493,32 @@ Logs are written to `storage/logs/app.log`.
 
 ## Container
 
-```php
-// Bind a singleton
-$app->singleton('myService', fn ($app) => new MyService($app['db']));
+The container uses array-access. Every closure binding is a singleton — resolved once on first access, then frozen.
 
-// Bind a factory (new instance each time)
-$app->bind('myService', fn ($app) => new MyService($app['db']));
+```php
+// Register a service (resolved lazily on first access)
+$app['myService'] = fn ($app) => new MyService($app['db']);
+
+// Register a raw value
+$app['apiKey'] = 'abc123';
+
+// Protect a closure so it is stored as-is, not invoked as a factory
+$app['myCallback'] = $app->protect(fn ($value) => strtolower($value));
+
+// Decorate an existing service
+$app->extend('mailer', function ($mailer, $app) {
+    $mailer->setLogger($app['logger']);
+    return $mailer;
+});
 
 // Resolve
 $service = $app['myService'];
-$service = $app->make('myService');
+
+// Check existence
+isset($app['myService']);
+
+// Retrieve the original factory closure (before resolution)
+$factory = $app->raw('myService');
 ```
 
 ### Service Providers
@@ -515,7 +531,7 @@ class MyServiceProvider implements ServiceProviderInterface, BootableProviderInt
 {
     public function register(Application $app): void
     {
-        $app->singleton('myService', fn ($app) => new MyService());
+        $app['myService'] = fn ($app) => new MyService();
     }
 
     public function boot(Application $app): void
