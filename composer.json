@@ -1,0 +1,30 @@
+{
+    "name": "studiokaizen/framework",
+    "description": "ZenPHP — a modern zero-dependency PHP 8.4 micro-framework",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Vinayak Anivase",
+            "email": "vinayak@kaizendesignstudio.com",
+            "homepage": "https://kaizendesignstudio.com"
+        }
+    ],
+    "require": {
+        "php": "^8.4"
+    },
+    "autoload": {
+        "psr-4": {
+            "Zen\\": "src/"
+        },
+        "files": [
+            "src/helpers.php"
+        ]
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
