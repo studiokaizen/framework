@@ -125,18 +125,30 @@ Templates live in `resources/views/` and use plain PHP.
 // resources/views/layout.php
 <!DOCTYPE html>
 <html>
-<head><title><?= $this->e($this->section('title', 'App')) ?></title></head>
-<body><?= $this->section('content') ?></body>
+<head>
+    <title><?= $this->e($this->yield('title', 'App')) ?></title>
+    <?= $this->stack('css') ?>
+</head>
+<body>
+    <?= $this->yield('content') ?>
+    <?= $this->stack('scripts') ?>
+</body>
 </html>
 ```
 
 ```php
 // resources/views/home.php
 <?php $this->layout('layout'); ?>
-<?php $this->start('title'); ?>Home<?php $this->end(); ?>
-<?php $this->start('content'); ?>
+
+<?php $this->section('title', 'Home'); ?>
+
+<?php $this->startSection('content'); ?>
     <h1>Hello, <?= $this->e($name) ?></h1>
-<?php $this->end(); ?>
+<?php $this->endSection(); ?>
+
+<?php $this->append('scripts'); ?>
+<script src="/js/page.js"></script>
+<?php $this->endStack(); ?>
 ```
 
 ```php
@@ -144,7 +156,22 @@ Templates live in `resources/views/` and use plain PHP.
 return $app->view('home', ['name' => 'World']);
 ```
 
-`$this->e()` escapes output. `$this->layout()` sets the parent template. `$this->start()`/`$this->end()` define sections.
+### View API reference
+
+| Method | Description |
+|--------|-------------|
+| `$this->layout('name')` | Set the parent layout template |
+| `$this->yield('name', 'default')` | Output a section (use in layouts) |
+| `$this->section('name', 'value')` | Define a section inline (single-line value) |
+| `$this->startSection('name')` | Begin buffering a section |
+| `$this->endSection()` | End the current section buffer |
+| `$this->start('name')` / `$this->end()` | Aliases for startSection / endSection |
+| `$this->stack('name')` | Output a stack (use in layouts) |
+| `$this->append('name')` | Begin buffering content to append to a stack |
+| `$this->prepend('name')` | Begin buffering content to prepend to a stack |
+| `$this->endStack()` | End the current stack buffer |
+| `$this->e('string')` | HTML-escape a value |
+| `$this->share('key', $value)` | Share a variable with all templates |
 
 ---
 

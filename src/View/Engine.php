@@ -7,8 +7,8 @@ namespace Zen\View;
 use RuntimeException;
 
 /**
- * PHP template engine with layout inheritance, named sections, shared data,
- * and HTML escaping helpers.
+ * PHP template engine with layout inheritance, named sections, asset stacks,
+ * shared data, and HTML escaping helpers.
  */
 class Engine
 {
@@ -55,6 +55,27 @@ class Engine
     private ?string $currentSection = null;
 
     /**
+     * Named stacks of content fragments (e.g. CSS or JS snippets).
+     *
+     * @var array<string, list<string>>
+     */
+    private array $stacks = [];
+
+    /**
+     * Name of the stack currently being captured, or null.
+     *
+     * @var string|null
+     */
+    private ?string $currentStack = null;
+
+    /**
+     * When true the current stack buffer will be prepended; otherwise appended.
+     *
+     * @var bool
+     */
+    private bool $stackPrepend = false;
+
+    /**
      * Stores the views path and file extension.
      *
      * @param  string $viewsPath Absolute path to the views directory.
@@ -84,6 +105,9 @@ class Engine
         $this->layout         = null;
         $this->sections       = [];
         $this->currentSection = null;
+        $this->stacks         = [];
+        $this->currentStack   = null;
+        $this->stackPrepend   = false;
 
         $data    = array_merge($this->shared, $data);
         $content = $this->capture($template, $data);
@@ -112,6 +136,48 @@ class Engine
         $this->layout = $layout;
     }
 
+    // -------------------------------------------------------------------------
+    // Sections
+    // -------------------------------------------------------------------------
+
+    /**
+     * Defines or retrieves a named section.
+     *
+     * When called with a non-null $value the section is set inline (no
+     * output buffering required) and an empty string is returned so the call
+     * is safe inside an echo expression.  When called without $value the
+     * stored content for the section is returned (getter).
+     *
+     * @param  string      $name  Section name.
+     * @param  string|null $value Inline content to store, or null to read.
+     *
+     * @return string
+     */
+    public function section(string $name, ?string $value = null): string
+    {
+        if ($value !== null) {
+            $this->sections[$name] = $value;
+            return '';
+        }
+
+        return $this->sections[$name] ?? '';
+    }
+
+    /**
+     * Returns the captured content for the named section, or the default
+     * string when the section was never defined.  Intended for use in layout
+     * templates as the counterpart to section() / startSection().
+     *
+     * @param  string $name    Section name.
+     * @param  string $default Fallback string when the section is absent.
+     *
+     * @return string
+     */
+    public function yield(string $name, string $default = ''): string
+    {
+        return $this->sections[$name] ?? $default;
+    }
+
     /**
      * Begins capturing output into a named section.
      *
@@ -135,6 +201,18 @@ class Engine
     }
 
     /**
+     * Alias for start() — begins capturing output into a named section.
+     *
+     * @param  string $name Section name.
+     *
+     * @return void
+     */
+    public function startSection(string $name): void
+    {
+        $this->start($name);
+    }
+
+    /**
      * Closes the currently open section and stores the captured output.
      *
      * @throws RuntimeException If no section is currently open.
@@ -152,18 +230,106 @@ class Engine
     }
 
     /**
-     * Returns the captured content for the named section, or the default
-     * string when the section was never started.
+     * Alias for end() — closes the currently open section.
      *
-     * @param  string $name    Section name.
-     * @param  string $default Fallback string.
+     * @return void
+     */
+    public function endSection(): void
+    {
+        $this->end();
+    }
+
+    // -------------------------------------------------------------------------
+    // Stacks
+    // -------------------------------------------------------------------------
+
+    /**
+     * Begins capturing output to append to a named stack.
+     *
+     * @param  string $name Stack name.
+     *
+     * @throws RuntimeException If a stack capture is already open.
+     *
+     * @return void
+     */
+    public function append(string $name): void
+    {
+        if ($this->currentStack !== null) {
+            throw new RuntimeException(
+                sprintf('Cannot nest stack pushes. Call endStack() before starting "%s".', $name),
+            );
+        }
+
+        $this->currentStack = $name;
+        $this->stackPrepend = false;
+
+        ob_start();
+    }
+
+    /**
+     * Begins capturing output to prepend to a named stack.
+     *
+     * @param  string $name Stack name.
+     *
+     * @throws RuntimeException If a stack capture is already open.
+     *
+     * @return void
+     */
+    public function prepend(string $name): void
+    {
+        if ($this->currentStack !== null) {
+            throw new RuntimeException(
+                sprintf('Cannot nest stack pushes. Call endStack() before starting "%s".', $name),
+            );
+        }
+
+        $this->currentStack = $name;
+        $this->stackPrepend = true;
+
+        ob_start();
+    }
+
+    /**
+     * Closes the currently open stack capture and stores the buffered content.
+     *
+     * @throws RuntimeException If no stack capture is currently open.
+     *
+     * @return void
+     */
+    public function endStack(): void
+    {
+        if ($this->currentStack === null) {
+            throw new RuntimeException('No open stack. Call append() or prepend() before endStack().');
+        }
+
+        $content = ob_get_clean() ?: '';
+
+        if ($this->stackPrepend) {
+            array_unshift($this->stacks[$this->currentStack] ??= [], $content);
+        } else {
+            $this->stacks[$this->currentStack][] = $content;
+        }
+
+        $this->currentStack = null;
+        $this->stackPrepend = false;
+    }
+
+    /**
+     * Returns all content pushed onto a named stack, joined by newlines.
+     * Call this from a layout template to output the accumulated fragments.
+     *
+     * @param  string $name Stack name.
      *
      * @return string
      */
-    public function section(string $name, string $default = ''): string
+    public function stack(string $name): string
     {
-        return $this->sections[$name] ?? $default;
+        return implode(PHP_EOL, $this->stacks[$name] ?? []);
     }
+
+    // -------------------------------------------------------------------------
+    // Shared data & helpers
+    // -------------------------------------------------------------------------
 
     /**
      * Adds a variable to the shared data injected into every template.
@@ -203,6 +369,10 @@ class Engine
     {
         return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     }
+
+    // -------------------------------------------------------------------------
+    // Internals
+    // -------------------------------------------------------------------------
 
     /**
      * Includes a template file inside an output buffer and returns the
