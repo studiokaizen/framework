@@ -138,7 +138,7 @@ Templates live in `resources/views/` and use plain PHP.
 
 ```php
 // resources/views/home.php
-<?php $this->layout('layout'); ?>
+<?php $this->extend('layout'); ?>
 
 <?php $this->section('title', 'Home'); ?>
 
@@ -160,7 +160,7 @@ return $app->view('home', ['name' => 'World']);
 
 | Method | Description |
 |--------|-------------|
-| `$this->layout('name')` | Set the parent layout template |
+| `$this->extend('name')` | Set the parent layout template |
 | `$this->yield('name', 'default')` | Output a section (use in layouts) |
 | `$this->section('name', 'value')` | Define a section inline (single-line value) |
 | `$this->startSection('name')` | Begin buffering a section |

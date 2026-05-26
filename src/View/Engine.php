@@ -124,16 +124,16 @@ class Engine
     }
 
     /**
-     * Sets the layout template to wrap the current view's output.  Called
+     * Sets the parent template that wraps the current view's output.  Called
      * from within a view file.
      *
-     * @param  string $layout Layout template name relative to the views dir.
+     * @param  string $template Parent template name relative to the views dir.
      *
      * @return void
      */
-    public function layout(string $layout): void
+    public function extend(string $template): void
     {
-        $this->layout = $layout;
+        $this->layout = $template;
     }
 
     // -------------------------------------------------------------------------
