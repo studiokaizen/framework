@@ -1,0 +1,634 @@
+# ZenPHP Framework
+
+A modern, zero-dependency micro-framework for PHP 8.4.
+
+## Requirements
+
+- PHP 8.4+
+- PDO extension (SQLite or MySQL)
+- OpenSSL extension
+
+## Installation
+
+```bash
+composer require studiokaizen/framework
+```
+
+---
+
+## Getting Started
+
+Copy `config.example.php` to `config.php` and fill in your values. Generate an encryption key:
+
+```bash
+php zen key:generate
+```
+
+Run migrations:
+
+```bash
+php zen migrate
+```
+
+---
+
+## Routing
+
+Routes are defined in `public/index.php`. Every handler receives a `Request` and `Response` and must return a `Response`.
+
+```php
+use Zen\Http\Request;
+use Zen\Http\Response;
+
+$app->get('/', function (Request $request, Response $response) use ($app): Response {
+    return $app->view('home');
+});
+
+$app->post('/users', function (Request $request, Response $response) use ($app): Response {
+    // ...
+});
+
+$app->put('/users/:id', function (Request $request, Response $response) use ($app): Response {
+    $id = (int) $request->getRouteParam('id');
+    // ...
+});
+
+$app->patch('/users/:id', function (Request $request, Response $response) use ($app): Response { /* ... */ });
+$app->delete('/users/:id', function (Request $request, Response $response) use ($app): Response { /* ... */ });
+```
+
+### Route Parameters
+
+```php
+$app->get('/posts/:id/comments/:commentId', function (Request $request, Response $response): Response {
+    $postId    = (int) $request->getRouteParam('id');
+    $commentId = (int) $request->getRouteParam('commentId');
+    // ...
+});
+```
+
+### Route Middleware
+
+```php
+$app->get('/dashboard', $handler)->middleware('csrf', 'auth');
+$app->post('/api/items', $handler)->middleware('token', 'throttle:60,1');
+```
+
+### Route Groups
+
+```php
+$app->group('/admin', ['middleware' => ['csrf', 'auth']], function () use ($app): void {
+    $app->get('/', $handler);
+    $app->get('/users', $handler);
+});
+```
+
+---
+
+## Request
+
+```php
+$request->all();                        // all input (body + query)
+$request->input('name');               // single input value
+$request->input('role', 'user');       // with default
+$request->only('name', 'email');       // whitelist
+$request->query('page', 1);           // query string value
+$request->getRouteParam('id');         // route parameter
+$request->header('Authorization');     // request header
+$request->isJson();                    // Content-Type: application/json
+$request->isAjax();                    // X-Requested-With: XMLHttpRequest
+$request->method();                    // GET, POST, etc.
+$request->uri();                       // /path?query
+$request->ip();                        // client IP
+```
+
+---
+
+## Response
+
+```php
+return $response->view('template', $data);     // render a view
+return $response->json($data);                 // JSON response (200)
+return $response->json($data, 201);            // JSON with status
+return $response->redirect('/path');           // 302 redirect
+return $response->status(404)->body('Not found.');
+return $response->header('X-Custom', 'value')->json($data);
+```
+
+---
+
+## Views
+
+Templates live in `resources/views/` and use plain PHP.
+
+```php
+// resources/views/layout.php
+<!DOCTYPE html>
+<html>
+<head><title><?= $this->e($this->section('title', 'App')) ?></title></head>
+<body><?= $this->section('content') ?></body>
+</html>
+```
+
+```php
+// resources/views/home.php
+<?php $this->layout('layout'); ?>
+<?php $this->start('title'); ?>Home<?php $this->end(); ?>
+<?php $this->start('content'); ?>
+    <h1>Hello, <?= $this->e($name) ?></h1>
+<?php $this->end(); ?>
+```
+
+```php
+// Render from a route handler
+return $app->view('home', ['name' => 'World']);
+```
+
+`$this->e()` escapes output. `$this->layout()` sets the parent template. `$this->start()`/`$this->end()` define sections.
+
+---
+
+## Validation
+
+```php
+use Zen\Validation\ValidationException;
+
+try {
+    $data = $app->validator($request->all(), [
+        'name'     => 'required|min:2|max:100',
+        'email'    => 'required|email|max:255',
+        'password' => 'required|min:8',
+        'age'      => 'integer|min:18',
+        'website'  => 'url',
+        'role'     => 'in:admin,editor,viewer',
+    ])->validate();
+} catch (ValidationException $e) {
+    $e->errors(); // ['field' => ['message', ...]]
+}
+```
+
+Available rules: `required`, `string`, `integer`, `numeric`, `boolean`, `email`, `url`, `min`, `max`, `in`, `regex`, `confirmed`.
+
+---
+
+## Database
+
+### Query Builder
+
+```php
+// Select
+$users = $app['db']->table('users')->get();
+$user  = $app['db']->table('users')->find(1);
+$user  = $app['db']->table('users')->where('email', 'alice@example.com')->first();
+
+// Chaining
+$results = $app['db']->table('posts')
+    ->where('user_id', $userId)
+    ->where('published', 1)
+    ->orderBy('created_at', 'DESC')
+    ->limit(10)
+    ->get();
+
+// Insert / Update / Delete
+$id = $app['db']->table('users')->insert(['name' => 'Alice', 'email' => 'alice@example.com']);
+$app['db']->table('users')->where('id', $id)->update(['name' => 'Alice Smith']);
+$app['db']->table('users')->where('id', $id)->delete();
+
+// Aggregates
+$count = $app['db']->table('users')->count();
+$count = $app['db']->table('users')->where('active', 1)->count();
+
+// Raw queries
+$rows = $app['db']->select('SELECT * FROM posts WHERE user_id = ?', [$userId]);
+$row  = $app['db']->selectOne('SELECT COUNT(*) AS total FROM users');
+$app['db']->statement('UPDATE users SET active = 1 WHERE id = ?', [$id]);
+```
+
+### Pagination
+
+```php
+$total = (int) $app['db']->selectOne('SELECT COUNT(*) AS n FROM posts')->n;
+$items = $app['db']->select('SELECT * FROM posts ORDER BY id DESC LIMIT ? OFFSET ?', [$perPage, ($page - 1) * $perPage]);
+
+$paginator = new \Zen\Database\Paginator($items, $total, $perPage, $page);
+
+$paginator->items();
+$paginator->total();
+$paginator->currentPage();
+$paginator->lastPage();
+$paginator->hasMorePages();
+$paginator->nextPage();
+$paginator->previousPage();
+$paginator->toArray();
+```
+
+### Migrations
+
+```bash
+php zen make:migration create_posts_table
+php zen migrate
+php zen migrate:rollback
+php zen migrate:fresh --seed
+php zen migrate:status
+```
+
+Migration files use `-- UP` and `-- DOWN` sections:
+
+```sql
+-- UP
+CREATE TABLE posts (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL,
+    title      VARCHAR(255) NOT NULL,
+    body       TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- DOWN
+DROP TABLE posts;
+```
+
+---
+
+## Authentication
+
+### Session Auth
+
+```php
+// Login
+$app['auth']->attempt($email, $password); // returns bool
+$app['auth']->login($userId);
+$app['auth']->logout();
+
+// Current user
+$app['auth']->check();         // bool
+$app['auth']->id();            // int|null
+$app['auth']->user();          // array|null
+```
+
+### API Token Auth
+
+```php
+// Create a token for a user
+$token = $app['tokens']->create($userId, 'api-token');
+
+// Revoke
+$app['tokens']->revoke($tokenId);
+
+// Current token (inside a 'token' middleware route)
+$app['auth']->token();
+```
+
+Use the `token` middleware to protect API routes. Clients send `Authorization: Bearer <token>`.
+
+---
+
+## Middleware
+
+Register aliases in `bootstrap/app.php`:
+
+```php
+$app->registerMiddlewareAlias('custom', function ($app) {
+    return new \App\Middleware\CustomMiddleware();
+});
+```
+
+Built-in aliases: `csrf`, `auth`, `guest`, `token`, `throttle`, `cors`.
+
+Attach to routes:
+
+```php
+->middleware('csrf', 'auth')
+->middleware('throttle:60,1')   // 60 requests per 1 minute
+```
+
+### Custom Middleware
+
+```php
+use Zen\Middleware\MiddlewareInterface;
+use Zen\Http\Request;
+use Zen\Http\Response;
+
+class CustomMiddleware implements MiddlewareInterface
+{
+    public function handle(Request $request, Response $response, callable $next): Response
+    {
+        // before
+        $response = $next($request, $response);
+        // after
+        return $response;
+    }
+}
+```
+
+---
+
+## Cache
+
+```php
+$app['cache']->put('key', $value, $ttlSeconds);
+$app['cache']->get('key');
+$app['cache']->get('key', $default);
+$app['cache']->has('key');
+$app['cache']->forget('key');
+
+// Compute and cache
+$value = $app['cache']->remember('key', 300, function () {
+    return expensiveOperation();
+});
+```
+
+---
+
+## Events
+
+```php
+use Zen\Events\Event;
+
+class UserRegistered extends Event
+{
+    public function __construct(
+        public readonly int    $userId,
+        public readonly string $email,
+    ) {}
+}
+```
+
+```php
+// Dispatch
+$app['events']->dispatch(new UserRegistered($id, $email));
+
+// Listen
+$app['events']->addListener(UserRegistered::class, function (UserRegistered $event) use ($app): void {
+    $app['logger']->info("New user #{$event->userId}");
+});
+```
+
+---
+
+## Queue
+
+```php
+use Zen\Queue\Job;
+
+class SendWelcomeEmail extends Job
+{
+    public function __construct(
+        public readonly string $name,
+        public readonly string $email,
+    ) {}
+
+    public function handle(): void
+    {
+        // send email
+    }
+}
+```
+
+```php
+// Dispatch
+$app['queue']->dispatch(new SendWelcomeEmail($name, $email));
+
+// Dispatch to a named queue
+$app['queue']->dispatch(new SendWelcomeEmail($name, $email), queue: 'emails');
+```
+
+```bash
+php zen queue:work
+php zen queue:work --queue=emails
+php zen queue:work --max-jobs=10
+```
+
+---
+
+## Scheduler
+
+```php
+// In AppServiceProvider::boot()
+$app['scheduler']->call(function () use ($app): void {
+    // task logic
+})->daily();
+
+$app['scheduler']->call(fn () => /* ... */)->hourly();
+$app['scheduler']->call(fn () => /* ... */)->everyMinutes(15);
+$app['scheduler']->call(fn () => /* ... */)->cron('0 9 * * 1'); // every Monday at 9am
+```
+
+```bash
+# Add to cron — runs every minute
+* * * * * php /path/to/project/zen schedule:run
+```
+
+---
+
+## Mail
+
+```php
+$app['mailer']
+    ->to('alice@example.com', 'Alice')
+    ->subject('Welcome!')
+    ->text('Thanks for signing up.')
+    ->html('<p>Thanks for signing up.</p>')
+    ->send();
+```
+
+Configure the driver in `config.php` (`log`, `smtp`, or `sendmail`).
+
+---
+
+## Session
+
+```php
+$app['session']->start();
+$app['session']->set('key', $value);
+$app['session']->get('key');
+$app['session']->get('key', $default);
+$app['session']->has('key');
+$app['session']->forget('key');
+$app['session']->flash('success', 'Saved!');   // one-time message
+$app['session']->flash('success');              // read and clear
+$app['session']->regenerate();
+$app['session']->destroy();
+```
+
+---
+
+## Encryption & Hashing
+
+```php
+// Encryption (requires app.key in config.php)
+$encrypted = $app['encrypter']->encrypt('secret');
+$plain     = $app['encrypter']->decrypt($encrypted);
+
+// Hashing
+$hash    = $app['hasher']->make($password);
+$isValid = $app['hasher']->verify($password, $hash);
+```
+
+---
+
+## Storage
+
+```php
+$app['storage']->disk('local')->put('file.txt', 'contents');
+$app['storage']->disk('local')->get('file.txt');
+$app['storage']->disk('local')->exists('file.txt');
+$app['storage']->disk('local')->delete('file.txt');
+$app['storage']->disk('local')->files('/');         // list files
+```
+
+---
+
+## Logging
+
+```php
+$app['logger']->info('User logged in', ['id' => $userId]);
+$app['logger']->warning('Disk space low');
+$app['logger']->error('Payment failed', ['order' => $orderId]);
+```
+
+Logs are written to `storage/logs/app.log`.
+
+---
+
+## Container
+
+```php
+// Bind a singleton
+$app->singleton('myService', fn ($app) => new MyService($app['db']));
+
+// Bind a factory (new instance each time)
+$app->bind('myService', fn ($app) => new MyService($app['db']));
+
+// Resolve
+$service = $app['myService'];
+$service = $app->make('myService');
+```
+
+### Service Providers
+
+```php
+use Zen\DependencyInjection\ServiceProviderInterface;
+use Zen\DependencyInjection\BootableProviderInterface;
+
+class MyServiceProvider implements ServiceProviderInterface, BootableProviderInterface
+{
+    public function register(Application $app): void
+    {
+        $app->singleton('myService', fn ($app) => new MyService());
+    }
+
+    public function boot(Application $app): void
+    {
+        // runs after all providers are registered
+    }
+}
+```
+
+Register in `bootstrap/app.php`:
+
+```php
+$app->registerProviders([new MyServiceProvider()]);
+```
+
+---
+
+## Support Utilities
+
+### Str
+
+```php
+use Zen\Support\Str;
+
+Str::slug('Hello World');           // hello-world
+Str::camel('hello_world');          // helloWorld
+Str::pascal('hello_world');         // HelloWorld
+Str::snake('helloWorld');           // hello_world
+Str::contains('foobar', 'oba');     // true
+Str::startsWith('foobar', 'foo');   // true
+Str::endsWith('foobar', 'bar');     // true
+Str::limit('Long text...', 10);     // 'Long text…'
+Str::random(32);                    // random alphanumeric string
+```
+
+### Arr
+
+```php
+use Zen\Support\Arr;
+
+Arr::get($array, 'user.address.city', 'Unknown');
+Arr::set($array, 'user.name', 'Alice');
+Arr::has($array, 'user.email');
+Arr::forget($array, 'user.password');
+Arr::only($array, ['name', 'email']);
+Arr::except($array, ['password']);
+Arr::flatten($array);
+Arr::pluck($array, 'name');
+```
+
+### Collection
+
+```php
+use Zen\Support\Collection;
+
+$col = new Collection([1, 2, 3, 4, 5]);
+
+$col->map(fn ($n) => $n * 2);
+$col->filter(fn ($n) => $n > 2);
+$col->reduce(fn ($carry, $n) => $carry + $n, 0);
+$col->first();
+$col->last();
+$col->count();
+$col->toArray();
+```
+
+---
+
+## Console Commands
+
+```bash
+php zen list                       # list all commands
+php zen make:migration <name>      # create a migration
+php zen make:seeder <name>         # create a seeder
+php zen migrate                    # run pending migrations
+php zen migrate:rollback           # roll back last batch
+php zen migrate:reset              # roll back all
+php zen migrate:fresh              # reset + re-migrate
+php zen migrate:fresh --seed       # reset + re-migrate + seed
+php zen migrate:status             # show migration status
+php zen db:seed                    # run all seeders
+php zen queue:work                 # process queued jobs
+php zen schedule:run               # run due scheduled tasks
+php zen cache:clear                # clear file cache
+php zen key:generate               # generate an encryption key
+```
+
+### Custom Commands
+
+```php
+use Zen\Console\Command;
+
+class GreetCommand extends Command
+{
+    protected string $signature = 'greet {name}';
+    protected string $description = 'Greet someone';
+
+    public function handle(): int
+    {
+        $this->line('Hello, ' . $this->argument('name') . '!');
+        return 0;
+    }
+}
+```
+
+Register in `bootstrap/app.php`:
+
+```php
+$app['console']->add(new GreetCommand());
+```
+
+---
+
+## License
+
+MIT
